@@ -1,5 +1,4 @@
-# README.md に書き込む内容を定義
-readme_content = """# Discord Voice Mixer Bot
+# Discord Voice Mixer Bot
 
 ## 概要
 
@@ -30,23 +29,3 @@ discord-voice-mixer-bot/
 │   ├── audio_sender.py      # Node.jsからのPCMデータを受信し、VC2に再生する処理。
 │   ├── requirements.txt     # Pythonの依存関係（py-cord, ffmpeg-pythonなど）
 ├── README.md                # このファイル
-
-```
-## 🔧 使用技術・ライブラリ
-Node.js 側
-@discordjs/voice
-
-audio-mixer
-
-Python 側
-py-cord
-
-ffmpeg-python
-
-
-
-MIT License """
-
-readme_path = "/mnt/data/discord-voice-mixer-bot/README.md" with open(readme_path, "w", encoding="utf-8") as f: f.write(readme_content)
-
-readme_path
