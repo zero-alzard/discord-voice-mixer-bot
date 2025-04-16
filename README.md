@@ -29,3 +29,50 @@ discord-voice-mixer-bot/
 │   ├── audio_sender.py      # Node.jsからのPCMデータを受信し、VC2に再生する処理。
 │   ├── requirements.txt     # Pythonの依存関係（py-cord, ffmpeg-pythonなど）
 ├── README.md                # このファイル
+```
+
+---
+
+## 🔧 使用技術・ライブラリ
+
+### Node.js 側
+- `@discordjs/voice`
+- `audio-mixer`
+
+### Python 側
+- `py-cord`
+- `ffmpeg-python`
+
+---
+
+## 🚀 起動方法（例）
+
+Node.js 側を先に起動し、PCM出力を待機させます。
+
+```bash
+cd node
+npm install
+npm start
+```
+
+別プロセスで Python 側のBotを起動します。
+
+```bash
+cd python
+pip install -r requirements.txt
+python main.py
+```
+
+---
+
+## 📌 注意事項
+
+- .wav録音は不具合対処用であり、現在は未対応です。
+- このBotは「誰かが話すまで」VC2には音声を送信しません。
+- 発話中は連続的に音声が再生されます（音声ミキサーにより合成済み）。
+
+---
+
+## 📝 ライセンス
+
+MIT License
