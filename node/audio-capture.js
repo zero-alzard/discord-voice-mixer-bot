@@ -3,22 +3,13 @@ const { joinVoiceChannel } = require('@discordjs/voice');
 const prism = require('prism-media');
 const { AudioMixer } = require('audio-mixer');
 const { Readable } = require('stream');
+require('dotenv').config();
 
-// 引数からチャンネルIDとギルドIDを取得
-const [, , vcChannelId, guildId] = process.argv;
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-if (!vcChannelId || !guildId) {
-    console.error("Usage: node audio-capture.js <channelId> <guildId>");
-    process.exit(1);
-}
+const NODE_BOT_TOKEN = process.env.NODE_BOT_TOKEN;
 
-const client = new Client({ intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages
-]});
-
-const mixer = new AudioMixer.Mixer({
+let mixer = new AudioMixer.Mixer({
     channels: 2,
     bitDepth: 16,
     sampleRate: 48000,
@@ -26,73 +17,88 @@ const mixer = new AudioMixer.Mixer({
     volume: 100
 });
 
-const activeUsers = new Map();
+const activeUsers = new Map(); // userId => readable
+let messageChannel;
 
-client.once('ready', async () => {
-    console.log('🎧 Node Audio Bot Ready');
+client.once('ready', () => {
+    console.log('Node Audio Bot Ready');
+});
 
-    const guild = await client.guilds.fetch(guildId);
-    const channel = await guild.channels.fetch(vcChannelId);
+client.on('messageCreate', async (message) => {
+    if (message.content.startsWith('!capture')) {
+        const channel = message.member.voice.channel;
+        if (!channel) return;
 
-    const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: guild.id,
-        adapterCreator: guild.voiceAdapterCreator,
-    });
+        messageChannel = message.channel;
+        await message.channel.send("🎙️ 音声キャプチャを開始します");
 
-    const receiver = connection.receiver;
+        const connection = joinVoiceChannel({
+            channelId: channel.id,
+            guildId: channel.guild.id,
+            adapterCreator: channel.guild.voiceAdapterCreator,
+        });
 
-    receiver.speaking.on('start', (userId) => {
-        if (activeUsers.has(userId)) return;
+        const receiver = connection.receiver;
 
-        const opusStream = receiver.subscribe(userId, {
-            end: {
-                behavior: 'afterSilence',
-                duration: 1000
+        receiver.speaking.on('start', (userId) => {
+            if (activeUsers.has(userId)) return;
+
+            const opusStream = receiver.subscribe(userId, {
+                end: {
+                    behavior: 'afterSilence',
+                    duration: 1000
+                }
+            });
+
+            const decoder = new prism.opus.Decoder({ frameSize: 960, channels: 2, rate: 48000 });
+            const pcmStream = opusStream.pipe(decoder);
+
+            // VolumeTransformerで音量調整
+            const volumeStream = new prism.VolumeTransformer({ type: 's16le', volume: 1.0 });
+
+            pcmStream.pipe(volumeStream);
+
+            // AudioMixerでミックス
+            const input = new AudioMixer.Input({
+                channels: 2,
+                bitDepth: 16,
+                sampleRate: 48000,
+                volume: 100
+            });
+
+            volumeStream.pipe(input);
+            mixer.addInput(input);
+            activeUsers.set(userId, input);
+
+            announceSpeakingStart(userId);
+        });
+
+        receiver.speaking.on('end', (userId) => {
+            const input = activeUsers.get(userId);
+            if (input) {
+                mixer.removeInput(input);
+                activeUsers.delete(userId);
+                announceSpeakingEnd(userId);
             }
         });
 
-        const decoder = new prism.opus.Decoder({ frameSize: 960, channels: 2, rate: 48000 });
-        const pcmStream = opusStream.pipe(decoder);
-
-        const volumeStream = new prism.VolumeTransformer({ type: 's16le', volume: 1.0 });
-
-        pcmStream.pipe(volumeStream);
-
-        const input = new AudioMixer.Input({
-            channels: 2,
-            bitDepth: 16,
-            sampleRate: 48000,
-            volume: 100
-        });
-
-        volumeStream.pipe(input);
-        mixer.addInput(input);
-        activeUsers.set(userId, input);
-
-        announceSpeakingStart(userId);
-    });
-
-    receiver.speaking.on('end', (userId) => {
-        const input = activeUsers.get(userId);
-        if (input) {
-            mixer.removeInput(input);
-            activeUsers.delete(userId);
-            announceSpeakingEnd(userId);
-        }
-    });
-
-    Readable.from(mixer).pipe(process.stdout);
+        // ミックス済み出力を標準出力へ（Pythonへ）
+        Readable.from(mixer).pipe(process.stdout);
+    }
 });
 
 function announceSpeakingStart(userId) {
-    const userList = [...activeUsers.keys()].map(id => id).join(", ");
-    console.log(`🗣️ 発話開始: ${userId} | 現在話しているユーザー: ${userList}`);
+    if (messageChannel) {
+        const userList = [...activeUsers.keys()].map(id => `<@${id}>`).join(", ");
+        messageChannel.send(`🗣️ 発話開始: <@${userId}> | 現在話しているユーザー: ${userList}`);
+    }
 }
 
 function announceSpeakingEnd(userId) {
-    const userList = [...activeUsers.keys()].map(id => id).join(", ");
-    console.log(`🔇 発話終了: ${userId} | 現在話しているユーザー: ${userList || "なし"}`);
+    if (messageChannel) {
+        const userList = [...activeUsers.keys()].map(id => `<@${id}>`).join(", ");
+        messageChannel.send(`🔇 発話終了: <@${userId}> | 現在話しているユーザー: ${userList || "なし"}`);
+    }
 }
 
-client.login(process.env.NODE_BOT_TOKEN);
+client.login(NODE_BOT_TOKEN);
